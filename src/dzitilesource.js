@@ -33,9 +33,10 @@
  */
 
 (function( $ ){
-    
+
 /**
- * @class
+ * @class DziTileSource
+ * @memberof OpenSeadragon
  * @extends OpenSeadragon.TileSource
  * @param {Number|Object} width - the pixel width of the image or the idiomatic
  *      options object which is used instead of positional arguments.
@@ -48,13 +49,13 @@
  * @property {String} tilesUrl
  * @property {String} fileFormat
  * @property {OpenSeadragon.DisplayRect[]} displayRects
- */ 
+ */
 $.DziTileSource = function( width, height, tileSize, tileOverlap, tilesUrl, fileFormat, displayRects, minLevel, maxLevel ) {
     var i,
         rect,
         level,
         options;
-    
+
     if( $.isPlainObject( width ) ){
         options = width;
     }else{
@@ -66,7 +67,7 @@ $.DziTileSource = function( width, height, tileSize, tileOverlap, tilesUrl, file
             tilesUrl: arguments[ 4 ],
             fileFormat: arguments[ 5 ],
             displayRects: arguments[ 6 ],
-            minLevel: arguments[ 7 ], 
+            minLevel: arguments[ 7 ],
             maxLevel: arguments[ 8 ]
         };
     }
@@ -75,7 +76,7 @@ $.DziTileSource = function( width, height, tileSize, tileOverlap, tilesUrl, file
     this.tilesUrl     = options.tilesUrl;
     this.fileFormat   = options.fileFormat;
     this.displayRects = options.displayRects;
-    
+
     if ( this.displayRects ) {
         for ( i = this.displayRects.length - 1; i >= 0; i-- ) {
             rect = this.displayRects[ i ];
@@ -87,19 +88,18 @@ $.DziTileSource = function( width, height, tileSize, tileOverlap, tilesUrl, file
             }
         }
     }
-    
+
     $.TileSource.apply( this, [ options ] );
 
 };
 
-$.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
+$.extend( $.DziTileSource.prototype, $.TileSource.prototype, /** @lends OpenSeadragon.DziTileSource.prototype */{
 
 
     /**
      * Determine if the data and/or url imply the image service is supported by
      * this tile source.
      * @function
-     * @name OpenSeadragon.DziTileSource.prototype.supports
      * @param {Object|Array} data
      * @param {String} optional - url
      */
@@ -107,30 +107,29 @@ $.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
         var ns;
         if ( data.Image ) {
             ns = data.Image.xmlns;
-        } else if ( data.documentElement && "Image" == data.documentElement.tagName ) {
-            ns = data.documentElement.namespaceURI;
+        } else if ( data.documentElement) {
+            if ("Image" == data.documentElement.localName || "Image" == data.documentElement.tagName) {
+                ns = data.documentElement.namespaceURI;
+            }
         }
 
-        return ( "http://schemas.microsoft.com/deepzoom/2008" == ns ||
-            "http://schemas.microsoft.com/deepzoom/2009" == ns );
+        ns = (ns || '').toLowerCase();
+
+        return (ns.indexOf('schemas.microsoft.com/deepzoom/2008') !== -1 ||
+            ns.indexOf('schemas.microsoft.com/deepzoom/2009') !== -1);
     },
 
     /**
-     * 
+     *
      * @function
-     * @name OpenSeadragon.DziTileSource.prototype.configure
      * @param {Object|XMLDocument} data - the raw configuration
      * @param {String} url - the url the data was retreived from if any.
-     * @return {Object} options - A dictionary of keyword arguments sufficient 
+     * @return {Object} options - A dictionary of keyword arguments sufficient
      *      to configure this tile sources constructor.
      */
     configure: function( data, url ){
 
-        var dziPath,
-            dziName,
-            tilesUrl,
-            options,
-            host;
+        var options;
 
         if( !$.isPlainObject(data) ){
 
@@ -142,7 +141,14 @@ $.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
         }
 
         if (url && !options.tilesUrl) {
-            options.tilesUrl = url.replace(/([^\/]+)\.(dzi|xml|js)$/, '$1_files/');
+            options.tilesUrl = url.replace(
+                    /([^\/]+?)(\.(dzi|xml|js)?(\?[^\/]*)?)?\/?$/, '$1_files/');
+
+            if (url.search(/\.(dzi|xml|js)\?/) != -1) {
+                options.queryParams = url.match(/\?.*/);
+            }else{
+                options.queryParams = '';
+            }
         }
 
         return options;
@@ -151,19 +157,17 @@ $.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
 
     /**
      * @function
-     * @name OpenSeadragon.DziTileSource.prototype.getTileUrl
      * @param {Number} level
      * @param {Number} x
      * @param {Number} y
      */
     getTileUrl: function( level, x, y ) {
-        return [ this.tilesUrl, level, '/', x, '_', y, '.', this.fileFormat ].join( '' );
+        return [ this.tilesUrl, level, '/', x, '_', y, '.', this.fileFormat, this.queryParams ].join( '' );
     },
 
 
     /**
      * @function
-     * @name OpenSeadragon.DziTileSource.prototype.tileExists
      * @param {Number} level
      * @param {Number} x
      * @param {Number} y
@@ -195,10 +199,10 @@ $.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
             xMax = xMin + rect.width * scale;
             yMax = yMin + rect.height * scale;
 
-            xMin = Math.floor( xMin / this.tileSize );
-            yMin = Math.floor( yMin / this.tileSize );
-            xMax = Math.ceil( xMax / this.tileSize );
-            yMax = Math.ceil( yMax / this.tileSize );
+            xMin = Math.floor( xMin / this._tileWidth );
+            yMin = Math.floor( yMin / this._tileWidth ); // DZI tiles are square, so we just use _tileWidth
+            xMax = Math.ceil( xMax / this._tileWidth );
+            yMax = Math.ceil( yMax / this._tileWidth );
 
             if ( xMin <= x && x < xMax && yMin <= y && y < yMax ) {
                 return true;
@@ -216,13 +220,14 @@ $.extend( $.DziTileSource.prototype, $.TileSource.prototype, {
  * @function
  */
 function configureFromXML( tileSource, xmlDoc ){
-    
+
     if ( !xmlDoc || !xmlDoc.documentElement ) {
         throw new Error( $.getString( "Errors.Xml" ) );
     }
 
     var root           = xmlDoc.documentElement,
-        rootName       = root.tagName,
+        rootName       = root.localName || root.tagName,
+        ns             = xmlDoc.documentElement.namespaceURI,
         configuration  = null,
         displayRects   = [],
         dispRectNodes,
@@ -232,16 +237,20 @@ function configureFromXML( tileSource, xmlDoc ){
         i;
 
     if ( rootName == "Image" ) {
-        
+
         try {
-            sizeNode = root.getElementsByTagName( "Size" )[ 0 ];
+            sizeNode = root.getElementsByTagName("Size" )[ 0 ];
+            if (sizeNode === undefined) {
+                sizeNode = root.getElementsByTagNameNS(ns, "Size" )[ 0 ];
+            }
+
             configuration = {
                 Image: {
                     xmlns:       "http://schemas.microsoft.com/deepzoom/2008",
                     Url:         root.getAttribute( "Url" ),
                     Format:      root.getAttribute( "Format" ),
                     DisplayRect: null,
-                    Overlap:     parseInt( root.getAttribute( "Overlap" ), 10 ), 
+                    Overlap:     parseInt( root.getAttribute( "Overlap" ), 10 ),
                     TileSize:    parseInt( root.getAttribute( "TileSize" ), 10 ),
                     Size: {
                         Height: parseInt( sizeNode.getAttribute( "Height" ), 10 ),
@@ -255,11 +264,18 @@ function configureFromXML( tileSource, xmlDoc ){
                     $.getString( "Errors.ImageFormat", configuration.Image.Format.toUpperCase() )
                 );
             }
-            
-            dispRectNodes = root.getElementsByTagName( "DisplayRect" );
+
+            dispRectNodes = root.getElementsByTagName("DisplayRect" );
+            if (dispRectNodes === undefined) {
+                dispRectNodes = root.getElementsByTagNameNS(ns, "DisplayRect" )[ 0 ];
+            }
+
             for ( i = 0; i < dispRectNodes.length; i++ ) {
                 dispRectNode = dispRectNodes[ i ];
-                rectNode     = dispRectNode.getElementsByTagName( "Rect" )[ 0 ];
+                rectNode     = dispRectNode.getElementsByTagName("Rect" )[ 0 ];
+                if (rectNode === undefined) {
+                    rectNode = dispRectNode.getElementsByTagNameNS(ns, "Rect" )[ 0 ];
+                }
 
                 displayRects.push({
                     Rect: {
@@ -280,14 +296,16 @@ function configureFromXML( tileSource, xmlDoc ){
             return configureFromObject( tileSource, configuration );
 
         } catch ( e ) {
-            throw (e instanceof Error) ? 
-                e : 
+            throw (e instanceof Error) ?
+                e :
                 new Error( $.getString("Errors.Dzi") );
         }
     } else if ( rootName == "Collection" ) {
         throw new Error( $.getString( "Errors.Dzc" ) );
     } else if ( rootName == "Error" ) {
-        return processDZIError( root );
+        var messageNode = root.getElementsByTagName("Message")[0];
+        var message = messageNode.firstChild.nodeValue;
+        throw new Error(message);
     }
 
     throw new Error( $.getString( "Errors.Dzi" ) );
@@ -314,7 +332,7 @@ function configureFromObject( tileSource, configuration ){
 
     //TODO: need to figure out out to better handle image format compatibility
     //      which actually includes additional file formats like xml and pdf
-    //      and plain text for various tilesource implementations to avoid low 
+    //      and plain text for various tilesource implementations to avoid low
     //      level errors.
     //
     //      For now, just don't perform the check.

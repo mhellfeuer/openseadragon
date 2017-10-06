@@ -41,13 +41,14 @@
 
 
 (function( $ ){
-    
+
 /**
- * A tilesource implementation for Tiled Map Services (TMS).
+ * @class TmsTileSource
+ * @classdesc A tilesource implementation for Tiled Map Services (TMS).
  * TMS tile scheme ( [ as supported by OpenLayers ] is described here
  * ( http://openlayers.org/dev/examples/tms.html ).
  *
- * @class
+ * @memberof OpenSeadragon
  * @extends OpenSeadragon.TileSource
  * @param {Number|Object} width - the pixel width of the image or the idiomatic
  *      options object which is used instead of positional arguments.
@@ -55,7 +56,7 @@
  * @param {Number} tileSize
  * @param {Number} tileOverlap
  * @param {String} tilesUrl
- */ 
+ */
 $.TmsTileSource = function( width, height, tileSize, tileOverlap, tilesUrl ) {
     var options;
 
@@ -82,23 +83,22 @@ $.TmsTileSource = function( width, height, tileSize, tileOverlap, tilesUrl ) {
     } else {
         max = bufferedHeight / 256;
     }
-    options.maxLevel = Math.ceil(Math.log(max)/Math.log(2)) - 1;
+    options.maxLevel = Math.ceil(Math.log(max) / Math.log(2)) - 1;
     options.tileSize = 256;
     options.width = bufferedWidth;
     options.height = bufferedHeight;
-    
+
     $.TileSource.apply( this, [ options ] );
 
 };
 
-$.extend( $.TmsTileSource.prototype, $.TileSource.prototype, {
+$.extend( $.TmsTileSource.prototype, $.TileSource.prototype, /** @lends OpenSeadragon.TmsTileSource.prototype */{
 
 
     /**
      * Determine if the data and/or url imply the image service is supported by
      * this tile source.
      * @function
-     * @name OpenSeadragon.TmsTileSource.prototype.supports
      * @param {Object|Array} data
      * @param {String} optional - url
      */
@@ -107,12 +107,11 @@ $.extend( $.TmsTileSource.prototype, $.TileSource.prototype, {
     },
 
     /**
-     * 
+     *
      * @function
-     * @name OpenSeadragon.TmsTileSource.prototype.configure
      * @param {Object} data - the raw configuration
      * @param {String} url - the url the data was retreived from if any.
-     * @return {Object} options - A dictionary of keyword arguments sufficient 
+     * @return {Object} options - A dictionary of keyword arguments sufficient
      *      to configure this tile sources constructor.
      */
     configure: function( data, url ){
@@ -122,7 +121,6 @@ $.extend( $.TmsTileSource.prototype, $.TileSource.prototype, {
 
     /**
      * @function
-     * @name OpenSeadragon.TmsTileSource.prototype.getTileUrl
      * @param {Number} level
      * @param {Number} x
      * @param {Number} y
@@ -131,7 +129,7 @@ $.extend( $.TmsTileSource.prototype, $.TileSource.prototype, {
         // Convert from Deep Zoom definition to TMS zoom definition
         var yTiles = this.getNumTiles( level ).y - 1;
 
-        return this.tilesUrl + level + "/" + x + "/" +  (yTiles - y) + ".png";
+        return this.tilesUrl + level + "/" + x + "/" + (yTiles - y) + ".png";
     }
 });
 

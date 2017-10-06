@@ -35,8 +35,15 @@
 (function( $ ){
 
 /**
- * An enumeration of button states including, REST, GROUP, HOVER, and DOWN
+ * An enumeration of button states
+ * @member ButtonState
+ * @memberof OpenSeadragon
  * @static
+ * @type {Object}
+ * @property {Number} REST
+ * @property {Number} GROUP
+ * @property {Number} HOVER
+ * @property {Number} DOWN
  */
 $.ButtonState = {
     REST:   0,
@@ -46,47 +53,39 @@ $.ButtonState = {
 };
 
 /**
- * Manages events, hover states for individual buttons, tool-tips, as well 
- * as fading the bottons out when the user has not interacted with them
+ * @class Button
+ * @classdesc Manages events, hover states for individual buttons, tool-tips, as well
+ * as fading the buttons out when the user has not interacted with them
  * for a specified period.
- * @class
- * @extends OpenSeadragon.EventHandler
+ *
+ * @memberof OpenSeadragon
+ * @extends OpenSeadragon.EventSource
  * @param {Object} options
- * @param {String} options.tooltip Provides context help for the button we the
+ * @param {Element} [options.element=null] Element to use as the button. If not specified, an HTML &lt;div&gt; element is created.
+ * @param {String} [options.tooltip=null] Provides context help for the button when the
  *  user hovers over it.
- * @param {String} options.srcRest URL of image to use in 'rest' state
- * @param {String} options.srcGroup URL of image to use in 'up' state
- * @param {String} options.srcHover URL of image to use in 'hover' state
- * @param {String} options.srcDown URL of image to use in 'down' state
- * @param {Element} [options.element] Element to use as a container for the 
- *  button.
- * @property {String} tooltip Provides context help for the button we the
- *  user hovers over it.
- * @property {String} srcRest URL of image to use in 'rest' state
- * @property {String} srcGroup URL of image to use in 'up' state
- * @property {String} srcHover URL of image to use in 'hover' state
- * @property {String} srcDown URL of image to use in 'down' state
- * @property {Object} config Configurable settings for this button. DEPRECATED.
- * @property {Element} [element] Element to use as a container for the 
- *  button.
- * @property {Number} fadeDelay How long to wait before fading
- * @property {Number} fadeLength How long should it take to fade the button.
- * @property {Number} fadeBeginTime When the button last began to fade.
- * @property {Boolean} shouldFade Whether this button should fade after user 
- *  stops interacting with the viewport.
-    this.fadeDelay      = 0;      // begin fading immediately
-    this.fadeLength     = 2000;   // fade over a period of 2 seconds
-    this.fadeBeginTime  = null;
-    this.shouldFade     = false;
+ * @param {String} [options.srcRest=null] URL of image to use in 'rest' state.
+ * @param {String} [options.srcGroup=null] URL of image to use in 'up' state.
+ * @param {String} [options.srcHover=null] URL of image to use in 'hover' state.
+ * @param {String} [options.srcDown=null] URL of image to use in 'down' state.
+ * @param {Number} [options.fadeDelay=0] How long to wait before fading.
+ * @param {Number} [options.fadeLength=2000] How long should it take to fade the button.
+ * @param {OpenSeadragon.EventHandler} [options.onPress=null] Event handler callback for {@link OpenSeadragon.Button.event:press}.
+ * @param {OpenSeadragon.EventHandler} [options.onRelease=null] Event handler callback for {@link OpenSeadragon.Button.event:release}.
+ * @param {OpenSeadragon.EventHandler} [options.onClick=null] Event handler callback for {@link OpenSeadragon.Button.event:click}.
+ * @param {OpenSeadragon.EventHandler} [options.onEnter=null] Event handler callback for {@link OpenSeadragon.Button.event:enter}.
+ * @param {OpenSeadragon.EventHandler} [options.onExit=null] Event handler callback for {@link OpenSeadragon.Button.event:exit}.
+ * @param {OpenSeadragon.EventHandler} [options.onFocus=null] Event handler callback for {@link OpenSeadragon.Button.event:focus}.
+ * @param {OpenSeadragon.EventHandler} [options.onBlur=null] Event handler callback for {@link OpenSeadragon.Button.event:blur}.
  */
 $.Button = function( options ) {
 
     var _this = this;
 
-    $.EventHandler.call( this );
+    $.EventSource.call( this );
 
     $.extend( true, this, {
-        
+
         tooltip:            null,
         srcRest:            null,
         srcGroup:           null,
@@ -94,9 +93,17 @@ $.Button = function( options ) {
         srcDown:            null,
         clickTimeThreshold: $.DEFAULT_SETTINGS.clickTimeThreshold,
         clickDistThreshold: $.DEFAULT_SETTINGS.clickDistThreshold,
-        // begin fading immediately
-        fadeDelay:          0,  
-        // fade over a period of 2 seconds    
+        /**
+         * How long to wait before fading.
+         * @member {Number} fadeDelay
+         * @memberof OpenSeadragon.Button#
+         */
+        fadeDelay:          0,
+        /**
+         * How long should it take to fade the button.
+         * @member {Number} fadeLength
+         * @memberof OpenSeadragon.Button#
+         */
         fadeLength:         2000,
         onPress:            null,
         onRelease:          null,
@@ -108,143 +115,257 @@ $.Button = function( options ) {
 
     }, options );
 
-    this.element        = options.element   || $.makeNeutralElement( "button" );
-    this.element.href   = this.element.href || '#';
-    
+    /**
+     * The button element.
+     * @member {Element} element
+     * @memberof OpenSeadragon.Button#
+     */
+    this.element = options.element || $.makeNeutralElement("div");
+
     //if the user has specified the element to bind the control to explicitly
     //then do not add the default control images
-    if( !options.element ){
+    if ( !options.element ) {
         this.imgRest      = $.makeTransparentImage( this.srcRest );
         this.imgGroup     = $.makeTransparentImage( this.srcGroup );
         this.imgHover     = $.makeTransparentImage( this.srcHover );
         this.imgDown      = $.makeTransparentImage( this.srcDown );
-        
+
+        this.imgRest.alt  =
+        this.imgGroup.alt =
+        this.imgHover.alt =
+        this.imgDown.alt  =
+            this.tooltip;
+
+        this.element.style.position = "relative";
+        $.setElementTouchActionNone( this.element );
+
+        this.imgGroup.style.position =
+        this.imgHover.style.position =
+        this.imgDown.style.position  =
+            "absolute";
+
+        this.imgGroup.style.top =
+        this.imgHover.style.top =
+        this.imgDown.style.top  =
+            "0px";
+
+        this.imgGroup.style.left =
+        this.imgHover.style.left =
+        this.imgDown.style.left  =
+            "0px";
+
+        this.imgHover.style.visibility =
+        this.imgDown.style.visibility  =
+            "hidden";
+
+        if ($.Browser.vendor == $.BROWSERS.FIREFOX && $.Browser.version < 3) {
+            this.imgGroup.style.top =
+            this.imgHover.style.top =
+            this.imgDown.style.top  =
+                "";
+        }
+
         this.element.appendChild( this.imgRest );
         this.element.appendChild( this.imgGroup );
         this.element.appendChild( this.imgHover );
         this.element.appendChild( this.imgDown );
-
-        this.imgGroup.style.position = 
-        this.imgHover.style.position = 
-        this.imgDown.style.position  = 
-            "absolute";
-
-        this.imgGroup.style.top = 
-        this.imgHover.style.top = 
-        this.imgDown.style.top  = 
-            "0px";
-
-        this.imgGroup.style.left = 
-        this.imgHover.style.left = 
-        this.imgDown.style.left  = 
-            "0px";
-
-        this.imgHover.style.visibility = 
-        this.imgDown.style.visibility  = 
-            "hidden";
-
-        if ( $.Browser.vendor == $.BROWSERS.FIREFOX  && $.Browser.version < 3 ){
-            this.imgGroup.style.top = 
-            this.imgHover.style.top = 
-            this.imgDown.style.top  = 
-                "";
-        }
     }
 
 
-    this.addHandler( "onPress",     this.onPress );
-    this.addHandler( "onRelease",   this.onRelease );
-    this.addHandler( "onClick",     this.onClick );
-    this.addHandler( "onEnter",     this.onEnter );
-    this.addHandler( "onExit",      this.onExit );
-    this.addHandler( "onFocus",     this.onFocus );
-    this.addHandler( "onBlur",      this.onBlur );
+    this.addHandler("press", this.onPress);
+    this.addHandler("release", this.onRelease);
+    this.addHandler("click", this.onClick);
+    this.addHandler("enter", this.onEnter);
+    this.addHandler("exit", this.onExit);
+    this.addHandler("focus", this.onFocus);
+    this.addHandler("blur", this.onBlur);
 
+    /**
+     * The button's current state.
+     * @member {OpenSeadragon.ButtonState} currentState
+     * @memberof OpenSeadragon.Button#
+     */
     this.currentState = $.ButtonState.GROUP;
 
+    // When the button last began to fade.
     this.fadeBeginTime  = null;
+    // Whether this button should fade after user stops interacting with the viewport.
     this.shouldFade     = false;
 
     this.element.style.display  = "inline-block";
     this.element.style.position = "relative";
     this.element.title          = this.tooltip;
 
+    /**
+     * Tracks mouse/touch/key events on the button.
+     * @member {OpenSeadragon.MouseTracker} tracker
+     * @memberof OpenSeadragon.Button#
+     */
     this.tracker = new $.MouseTracker({
 
-        element:            this.element, 
-        clickTimeThreshold: this.clickTimeThreshold, 
+        element:            this.element,
+        clickTimeThreshold: this.clickTimeThreshold,
         clickDistThreshold: this.clickDistThreshold,
 
-        enterHandler: function( tracker, position, buttonDownElement, buttonDownAny ) {
-            if ( buttonDownElement ) {
+        enterHandler: function( event ) {
+            if ( event.insideElementPressed ) {
                 inTo( _this, $.ButtonState.DOWN );
-                _this.raiseEvent( "onEnter", _this );
-            } else if ( !buttonDownAny ) {
+                /**
+                 * Raised when the cursor enters the Button element.
+                 *
+                 * @event enter
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent( "enter", { originalEvent: event.originalEvent } );
+            } else if ( !event.buttonDownAny ) {
                 inTo( _this, $.ButtonState.HOVER );
             }
         },
 
-        focusHandler: function( tracker, position, buttonDownElement, buttonDownAny ) {
-            this.enterHandler( tracker, position, buttonDownElement, buttonDownAny );
-            _this.raiseEvent( "onFocus", _this );
+        focusHandler: function ( event ) {
+            this.enterHandler( event );
+            /**
+             * Raised when the Button element receives focus.
+             *
+             * @event focus
+             * @memberof OpenSeadragon.Button
+             * @type {object}
+             * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+             * @property {Object} originalEvent - The original DOM event.
+             * @property {?Object} userData - Arbitrary subscriber-defined object.
+             */
+            _this.raiseEvent( "focus", { originalEvent: event.originalEvent } );
         },
 
-        exitHandler: function( tracker, position, buttonDownElement, buttonDownAny ) {
+        exitHandler: function( event ) {
             outTo( _this, $.ButtonState.GROUP );
-            if ( buttonDownElement ) {
-                _this.raiseEvent( "onExit", _this );
+            if ( event.insideElementPressed ) {
+                /**
+                 * Raised when the cursor leaves the Button element.
+                 *
+                 * @event exit
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent( "exit", { originalEvent: event.originalEvent } );
             }
         },
 
-        blurHandler: function( tracker, position, buttonDownElement, buttonDownAny ) {
-            this.exitHandler( tracker, position, buttonDownElement, buttonDownAny );
-            _this.raiseEvent( "onBlur", _this );
+        blurHandler: function ( event ) {
+            this.exitHandler( event );
+            /**
+             * Raised when the Button element loses focus.
+             *
+             * @event blur
+             * @memberof OpenSeadragon.Button
+             * @type {object}
+             * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+             * @property {Object} originalEvent - The original DOM event.
+             * @property {?Object} userData - Arbitrary subscriber-defined object.
+             */
+            _this.raiseEvent( "blur", { originalEvent: event.originalEvent } );
         },
 
-        pressHandler: function( tracker, position ) {
+        pressHandler: function ( event ) {
             inTo( _this, $.ButtonState.DOWN );
-            _this.raiseEvent( "onPress", _this );
+            /**
+             * Raised when a mouse button is pressed or touch occurs in the Button element.
+             *
+             * @event press
+             * @memberof OpenSeadragon.Button
+             * @type {object}
+             * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+             * @property {Object} originalEvent - The original DOM event.
+             * @property {?Object} userData - Arbitrary subscriber-defined object.
+             */
+            _this.raiseEvent( "press", { originalEvent: event.originalEvent } );
         },
 
-        releaseHandler: function( tracker, position, insideElementPress, insideElementRelease ) {
-            if ( insideElementPress && insideElementRelease ) {
+        releaseHandler: function( event ) {
+            if ( event.insideElementPressed && event.insideElementReleased ) {
                 outTo( _this, $.ButtonState.HOVER );
-                _this.raiseEvent( "onRelease", _this );
-            } else if ( insideElementPress ) {
+                /**
+                 * Raised when the mouse button is released or touch ends in the Button element.
+                 *
+                 * @event release
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent( "release", { originalEvent: event.originalEvent } );
+            } else if ( event.insideElementPressed ) {
                 outTo( _this, $.ButtonState.GROUP );
             } else {
                 inTo( _this, $.ButtonState.HOVER );
             }
         },
 
-        clickHandler: function( tracker, position, quick, shift ) {
-            if ( quick ) {
-                _this.raiseEvent("onClick", _this);
+        clickHandler: function( event ) {
+            if ( event.quick ) {
+                /**
+                 * Raised when a mouse button is pressed and released or touch is initiated and ended in the Button element within the time and distance threshold.
+                 *
+                 * @event click
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent("click", { originalEvent: event.originalEvent });
             }
         },
 
-        keyHandler: function( tracker, key ){
-            //console.log( "%s : handling key %s!", _this.tooltip, key);
-            if( 13 === key ){
-                _this.raiseEvent( "onClick", _this );
-                _this.raiseEvent( "onRelease", _this );
+        keyHandler: function( event ){
+            //console.log( "%s : handling key %s!", _this.tooltip, event.keyCode);
+            if( 13 === event.keyCode ){
+                /***
+                 * Raised when a mouse button is pressed and released or touch is initiated and ended in the Button element within the time and distance threshold.
+                 *
+                 * @event click
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent( "click", { originalEvent: event.originalEvent } );
+                /***
+                 * Raised when the mouse button is released or touch ends in the Button element.
+                 *
+                 * @event release
+                 * @memberof OpenSeadragon.Button
+                 * @type {object}
+                 * @property {OpenSeadragon.Button} eventSource - A reference to the Button which raised the event.
+                 * @property {Object} originalEvent - The original DOM event.
+                 * @property {?Object} userData - Arbitrary subscriber-defined object.
+                 */
+                _this.raiseEvent( "release", { originalEvent: event.originalEvent } );
                 return false;
             }
             return true;
         }
 
-    }).setTracking( true );
+    });
 
     outTo( this, $.ButtonState.REST );
 };
 
-$.extend( $.Button.prototype, $.EventHandler.prototype, {
+$.extend( $.Button.prototype, $.EventSource.prototype, /** @lends OpenSeadragon.Button.prototype */{
 
     /**
      * TODO: Determine what this function is intended to do and if it's actually
      * useful as an API point.
      * @function
-     * @name OpenSeadragon.Button.prototype.notifyGroupEnter
      */
     notifyGroupEnter: function() {
         inTo( this, $.ButtonState.GROUP );
@@ -254,18 +375,23 @@ $.extend( $.Button.prototype, $.EventHandler.prototype, {
      * TODO: Determine what this function is intended to do and if it's actually
      * useful as an API point.
      * @function
-     * @name OpenSeadragon.Button.prototype.notifyGroupExit
      */
     notifyGroupExit: function() {
         outTo( this, $.ButtonState.REST );
     },
 
+    /**
+     * @function
+     */
     disable: function(){
         this.notifyGroupExit();
         this.element.disabled = true;
         $.setElementOpacity( this.element, 0.2, true );
     },
 
+    /**
+     * @function
+     */
     enable: function(){
         this.element.disabled = false;
         $.setElementOpacity( this.element, 1.0, true );
@@ -287,7 +413,7 @@ function updateFade( button ) {
         opacity;
 
     if ( button.shouldFade ) {
-        currentTime = +new Date();
+        currentTime = $.now();
         deltaTime   = currentTime - button.fadeBeginTime;
         opacity     = 1.0 - deltaTime / button.fadeLength;
         opacity     = Math.min( 1.0, opacity );
@@ -305,8 +431,8 @@ function updateFade( button ) {
 
 function beginFading( button ) {
     button.shouldFade = true;
-    button.fadeBeginTime = +new Date() + button.fadeDelay;
-    window.setTimeout( function(){ 
+    button.fadeBeginTime = $.now() + button.fadeDelay;
+    window.setTimeout( function(){
         scheduleFade( button );
     }, button.fadeDelay );
 }
@@ -324,13 +450,13 @@ function inTo( button, newState ) {
         return;
     }
 
-    if ( newState >= $.ButtonState.GROUP && 
+    if ( newState >= $.ButtonState.GROUP &&
          button.currentState == $.ButtonState.REST ) {
         stopFading( button );
         button.currentState = $.ButtonState.GROUP;
     }
 
-    if ( newState >= $.ButtonState.HOVER && 
+    if ( newState >= $.ButtonState.HOVER &&
          button.currentState == $.ButtonState.GROUP ) {
         if( button.imgHover ){
             button.imgHover.style.visibility = "";
@@ -338,7 +464,7 @@ function inTo( button, newState ) {
         button.currentState = $.ButtonState.HOVER;
     }
 
-    if ( newState >= $.ButtonState.DOWN && 
+    if ( newState >= $.ButtonState.DOWN &&
          button.currentState == $.ButtonState.HOVER ) {
         if( button.imgDown ){
             button.imgDown.style.visibility = "";
@@ -354,7 +480,7 @@ function outTo( button, newState ) {
         return;
     }
 
-    if ( newState <= $.ButtonState.HOVER && 
+    if ( newState <= $.ButtonState.HOVER &&
          button.currentState == $.ButtonState.DOWN ) {
         if( button.imgDown ){
             button.imgDown.style.visibility = "hidden";
@@ -362,7 +488,7 @@ function outTo( button, newState ) {
         button.currentState = $.ButtonState.HOVER;
     }
 
-    if ( newState <= $.ButtonState.GROUP && 
+    if ( newState <= $.ButtonState.GROUP &&
          button.currentState == $.ButtonState.HOVER ) {
         if( button.imgHover ){
             button.imgHover.style.visibility = "hidden";
@@ -370,7 +496,7 @@ function outTo( button, newState ) {
         button.currentState = $.ButtonState.GROUP;
     }
 
-    if ( newState <= $.ButtonState.REST && 
+    if ( newState <= $.ButtonState.REST &&
          button.currentState == $.ButtonState.GROUP ) {
         beginFading( button );
         button.currentState = $.ButtonState.REST;

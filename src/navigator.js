@@ -33,41 +33,63 @@
  */
 
 (function( $ ){
-    
+
 /**
- * The Navigator provides a small view of the current image as fixed
+ * @class Navigator
+ * @classdesc The Navigator provides a small view of the current image as fixed
  * while representing the viewport as a moving box serving as a frame
  * of reference in the larger viewport as to which portion of the image
  * is currently being examined.  The navigator's viewport can be interacted
  * with using the keyboard or the mouse.
- * @class 
- * @name OpenSeadragon.Navigator
+ *
+ * @memberof OpenSeadragon
  * @extends OpenSeadragon.Viewer
- * @extends OpenSeadragon.EventHandler
+ * @extends OpenSeadragon.EventSource
  * @param {Object} options
- * @param {String} options.viewerId
  */
 $.Navigator = function( options ){
 
-    var _this       = this,
-        viewer      = options.viewer,
-        viewerSize  = $.getElementSize( viewer.element),
-        unneededElement;
+    var viewer      = options.viewer,
+        _this = this,
+        viewerSize,
+        navigatorSize;
 
     //We may need to create a new element and id if they did not
     //provide the id for the existing element
     if( !options.id ){
-        options.id              = 'navigator-' + (+new Date());
+        options.id              = 'navigator-' + $.now();
         this.element            = $.makeNeutralElement( "div" );
-        options.controlOptions  = {anchor:           $.ControlAnchor.TOP_RIGHT,
-                                   attachToViewer:   true,
-                                   autoFade:         true};
-    }
-    else {
+        options.controlOptions  = {
+            anchor:           $.ControlAnchor.TOP_RIGHT,
+            attachToViewer:   true,
+            autoFade:         options.autoFade
+        };
+
+        if( options.position ){
+            if( 'BOTTOM_RIGHT' == options.position ){
+               options.controlOptions.anchor = $.ControlAnchor.BOTTOM_RIGHT;
+            } else if( 'BOTTOM_LEFT' == options.position ){
+               options.controlOptions.anchor = $.ControlAnchor.BOTTOM_LEFT;
+            } else if( 'TOP_RIGHT' == options.position ){
+               options.controlOptions.anchor = $.ControlAnchor.TOP_RIGHT;
+            } else if( 'TOP_LEFT' == options.position ){
+               options.controlOptions.anchor = $.ControlAnchor.TOP_LEFT;
+            } else if( 'ABSOLUTE' == options.position ){
+               options.controlOptions.anchor = $.ControlAnchor.ABSOLUTE;
+               options.controlOptions.top = options.top;
+               options.controlOptions.left = options.left;
+               options.controlOptions.height = options.height;
+               options.controlOptions.width = options.width;
+            }
+        }
+
+    } else {
         this.element            = document.getElementById( options.id );
-        options.controlOptions  = {anchor:           $.ControlAnchor.NONE,
-                                   attachToViewer:   false,
-                                   autoFade:         false};
+        options.controlOptions  = {
+            anchor:           $.ControlAnchor.NONE,
+            attachToViewer:   false,
+            autoFade:         false
+        };
     }
     this.element.id         = options.id;
     this.element.className  += ' navigator';
@@ -76,6 +98,7 @@ $.Navigator = function( options ){
         sizeRatio:     $.DEFAULT_SETTINGS.navigatorSizeRatio
     }, options, {
         element:                this.element,
+        tabIndex:               -1, // No keyboard navigation, omit from tab order
         //These need to be overridden to prevent recursion since
         //the navigator is a viewer and a viewer has a navigator
         showNavigator:          false,
@@ -84,27 +107,33 @@ $.Navigator = function( options ){
         showSequenceControl:    false,
         immediateRender:        true,
         blendTime:              0,
-        animationTime:          0
+        animationTime:          0,
+        autoResize:             options.autoResize,
+        // prevent resizing the navigator from adding unwanted space around the image
+        minZoomImageRatio:      1.0
     });
 
     options.minPixelRatio = this.minPixelRatio = viewer.minPixelRatio;
 
-    this.viewerSizeInPoints = viewer.viewport.deltaPointsFromPixels(viewerSize);
+    $.setElementTouchActionNone( this.element );
+
     this.borderWidth = 2;
     //At some browser magnification levels the display regions lines up correctly, but at some there appears to
     //be a one pixel gap.
     this.fudge = new $.Point(1, 1);
-    this.totalBorderWidths = new $.Point(this.borderWidth*2, this.borderWidth*2).minus(this.fudge);
+    this.totalBorderWidths = new $.Point(this.borderWidth * 2, this.borderWidth * 2).minus(this.fudge);
 
 
-    (function( style, borderWidth ){
-        style.margin        = '0px';
-        style.border        = borderWidth + 'px solid #555';
-        style.padding       = '0px';
-        style.background    = '#000';
-        style.opacity       = 0.8;
-        style.overflow      = 'hidden';
-    }( this.element.style, this.borderWidth));
+    if ( options.controlOptions.anchor != $.ControlAnchor.NONE ) {
+        (function( style, borderWidth ){
+            style.margin        = '0px';
+            style.border        = borderWidth + 'px solid #555';
+            style.padding       = '0px';
+            style.background    = '#000';
+            style.opacity       = 0.8;
+            style.overflow      = 'hidden';
+        }( this.element.style, this.borderWidth));
+    }
 
     this.displayRegion           = $.makeNeutralElement( "div" );
     this.displayRegion.id        = this.element.id + '-displayregion';
@@ -121,114 +150,253 @@ $.Navigator = function( options ){
         style.padding       = '0px';
         //TODO: IE doesnt like this property being set
         //try{ style.outline  = '2px auto #909'; }catch(e){/*ignore*/}
-        
+
         style.background    = 'transparent';
 
         // We use square bracket notation on the statement below, because float is a keyword.
         // This is important for the Google Closure compiler, if nothing else.
-        /*jshint sub:true */ 
+        /*jshint sub:true */
         style['float']      = 'left'; //Webkit
-        
+
         style.cssFloat      = 'left'; //Firefox
         style.styleFloat    = 'left'; //IE
         style.zIndex        = 999999999;
         style.cursor        = 'default';
     }( this.displayRegion.style, this.borderWidth ));
 
+    this.displayRegionContainer = $.makeNeutralElement("div");
+    this.displayRegionContainer.id = this.element.id + '-displayregioncontainer';
+    this.displayRegionContainer.className = "displayregioncontainer";
+    this.displayRegionContainer.style.width = "100%";
+    this.displayRegionContainer.style.height = "100%";
 
-    this.element.innerTracker = new $.MouseTracker({
-        element:        this.element,
-        dragHandler:        $.delegate( this, onCanvasDrag ),
-        clickHandler:       $.delegate( this, onCanvasClick ),
-        releaseHandler:     $.delegate( this, onCanvasRelease ),
-        scrollHandler:  function(){
-            //dont scroll the page up and down if the user is scrolling
-            //in the navigator
-            return false;
-        }
-    }).setTracking( true );
-
-    /*this.displayRegion.outerTracker = new $.MouseTracker({
-        element:            this.container, 
-        clickTimeThreshold: this.clickTimeThreshold, 
-        clickDistThreshold: this.clickDistThreshold,
-        enterHandler:       $.delegate( this, onContainerEnter ),
-        exitHandler:        $.delegate( this, onContainerExit ),
-        releaseHandler:     $.delegate( this, onContainerRelease )
-    }).setTracking( this.mouseNavEnabled ? true : false ); // always tracking*/
-
-
-    viewer.addControl( 
-        this.element, 
+    viewer.addControl(
+        this.element,
         options.controlOptions
     );
 
-    if( options.width && options.height ){
-        this.element.style.width  = options.width + 'px';
-        this.element.style.height = options.height + 'px';
-    } else {
-        this.element.style.width  = ( viewerSize.x * options.sizeRatio ) + 'px';
-        this.element.style.height = ( viewerSize.y * options.sizeRatio ) + 'px';
+    this._resizeWithViewer = options.controlOptions.anchor != $.ControlAnchor.ABSOLUTE &&
+        options.controlOptions.anchor != $.ControlAnchor.NONE;
+
+    if ( this._resizeWithViewer ) {
+        if ( options.width && options.height ) {
+            this.element.style.height = typeof (options.height) == "number" ? (options.height + 'px') : options.height;
+            this.element.style.width  = typeof (options.width) == "number" ? (options.width + 'px') : options.width;
+        } else {
+            viewerSize = $.getElementSize( viewer.element );
+            this.element.style.height = Math.round( viewerSize.y * options.sizeRatio ) + 'px';
+            this.element.style.width  = Math.round( viewerSize.x * options.sizeRatio ) + 'px';
+            this.oldViewerSize = viewerSize;
+        }
+        navigatorSize = $.getElementSize( this.element );
+        this.elementArea = navigatorSize.x * navigatorSize.y;
     }
 
-    $.Viewer.apply( this, [ options ] ); 
+    this.oldContainerSize = new $.Point( 0, 0 );
 
-    this.element.getElementsByTagName('form')[0].appendChild( this.displayRegion );
-    unneededElement = this.element.getElementsByTagName('textarea')[0];
-    if (unneededElement) {
-        unneededElement.parentNode.removeChild(unneededElement);
+    $.Viewer.apply( this, [ options ] );
+
+    this.displayRegionContainer.appendChild(this.displayRegion);
+    this.element.getElementsByTagName('div')[0].appendChild(this.displayRegionContainer);
+
+    function rotate(degrees) {
+        _setTransformRotate(_this.displayRegionContainer, degrees);
+        _setTransformRotate(_this.displayRegion, -degrees);
+        _this.viewport.setRotation(degrees);
+    }
+    if (options.navigatorRotate) {
+        var degrees = options.viewer.viewport ?
+            options.viewer.viewport.getRotation() :
+            options.viewer.degrees || 0;
+        rotate(degrees);
+        options.viewer.addHandler("rotate", function (args) {
+            rotate(args.degrees);
+        });
     }
 
+    // Remove the base class' (Viewer's) innerTracker and replace it with our own
+    this.innerTracker.destroy();
+    this.innerTracker = new $.MouseTracker({
+        element:         this.element,
+        dragHandler:     $.delegate( this, onCanvasDrag ),
+        clickHandler:    $.delegate( this, onCanvasClick ),
+        releaseHandler:  $.delegate( this, onCanvasRelease ),
+        scrollHandler:   $.delegate( this, onCanvasScroll )
+    });
+
+    this.addHandler("reset-size", function() {
+        if (_this.viewport) {
+            _this.viewport.goHome(true);
+        }
+    });
+
+    viewer.world.addHandler("item-index-change", function(event) {
+        window.setTimeout(function(){
+            var item = _this.world.getItemAt(event.previousIndex);
+            _this.world.setItemIndex(item, event.newIndex);
+        }, 1);
+    });
+
+    viewer.world.addHandler("remove-item", function(event) {
+        var theirItem = event.item;
+        var myItem = _this._getMatchingItem(theirItem);
+        if (myItem) {
+            _this.world.removeItem(myItem);
+        }
+    });
+
+    this.update(viewer.viewport);
 };
 
-$.extend( $.Navigator.prototype, $.EventHandler.prototype, $.Viewer.prototype, {
+$.extend( $.Navigator.prototype, $.EventSource.prototype, $.Viewer.prototype, /** @lends OpenSeadragon.Navigator.prototype */{
 
     /**
+     * Used to notify the navigator when its size has changed.
+     * Especially useful when {@link OpenSeadragon.Options}.navigatorAutoResize is set to false and the navigator is resizable.
      * @function
-     * @name OpenSeadragon.Navigator.prototype.update
      */
-    update: function( viewport ){
+    updateSize: function () {
+        if ( this.viewport ) {
+            var containerSize = new $.Point(
+                    (this.container.clientWidth === 0 ? 1 : this.container.clientWidth),
+                    (this.container.clientHeight === 0 ? 1 : this.container.clientHeight)
+                );
 
-        var bounds,
+            if ( !containerSize.equals( this.oldContainerSize ) ) {
+                this.viewport.resize( containerSize, true );
+                this.viewport.goHome(true);
+                this.oldContainerSize = containerSize;
+                this.drawer.clear();
+                this.world.draw();
+            }
+        }
+    },
+
+    /**
+     * Used to update the navigator minimap's viewport rectangle when a change in the viewer's viewport occurs.
+     * @function
+     * @param {OpenSeadragon.Viewport} The viewport this navigator is tracking.
+     */
+    update: function( viewport ) {
+
+        var viewerSize,
+            newWidth,
+            newHeight,
+            bounds,
             topleft,
             bottomright;
 
-        if( viewport && this.viewport ){
-            bounds      = viewport.getBounds( true );
-            topleft     = this.viewport.pixelFromPoint( bounds.getTopLeft());
-            bottomright = this.viewport.pixelFromPoint( bounds.getBottomRight()).minus(this.totalBorderWidths);
+        viewerSize = $.getElementSize( this.viewer.element );
+        if ( this._resizeWithViewer && viewerSize.x && viewerSize.y && !viewerSize.equals( this.oldViewerSize ) ) {
+            this.oldViewerSize = viewerSize;
 
-            //update style for navigator-box    
-            (function(style, borderWidth){
+            if ( this.maintainSizeRatio || !this.elementArea) {
+                newWidth  = viewerSize.x * this.sizeRatio;
+                newHeight = viewerSize.y * this.sizeRatio;
+            } else {
+                newWidth = Math.sqrt(this.elementArea * (viewerSize.x / viewerSize.y));
+                newHeight = this.elementArea / newWidth;
+            }
 
-                style.top    = topleft.y + 'px';
-                style.left   = topleft.x + 'px';
+            this.element.style.width  = Math.round( newWidth ) + 'px';
+            this.element.style.height = Math.round( newHeight ) + 'px';
 
-                var width = Math.abs( topleft.x - bottomright.x );
-                var height = Math.abs( topleft.y - bottomright.y );
-                // make sure width and height are non-negative so IE doesn't throw
-                style.width  = Math.max( width, 0 ) + 'px';
-                style.height = Math.max( height, 0 ) + 'px';
+            if (!this.elementArea) {
+                this.elementArea = newWidth * newHeight;
+            }
 
-            }( this.displayRegion.style, this.borderWidth));
-        } 
+            this.updateSize();
+        }
+
+        if (viewport && this.viewport) {
+            bounds      = viewport.getBoundsNoRotate(true);
+            topleft     = this.viewport.pixelFromPointNoRotate(bounds.getTopLeft(), false);
+            bottomright = this.viewport.pixelFromPointNoRotate(bounds.getBottomRight(), false)
+                .minus( this.totalBorderWidths );
+
+            //update style for navigator-box
+            var style = this.displayRegion.style;
+            style.display = this.world.getItemCount() ? 'block' : 'none';
+
+            style.top    = Math.round( topleft.y ) + 'px';
+            style.left   = Math.round( topleft.x ) + 'px';
+
+            var width = Math.abs( topleft.x - bottomright.x );
+            var height = Math.abs( topleft.y - bottomright.y );
+            // make sure width and height are non-negative so IE doesn't throw
+            style.width  = Math.round( Math.max( width, 0 ) ) + 'px';
+            style.height = Math.round( Math.max( height, 0 ) ) + 'px';
+        }
 
     },
 
-    open: function( source ){
-        var containerSize = this.viewer.viewport.containerSize.times( this.sizeRatio );
-        if( source.tileSize > containerSize.x || 
-            source.tileSize > containerSize.y ){
-            this.minPixelRatio = Math.min( 
-                containerSize.x, 
-                containerSize.y 
-            ) / source.tileSize;
-        } else {
-            this.minPixelRatio = this.viewer.minPixelRatio;
-        }
-        return $.Viewer.prototype.open.apply( this, [ source ] );
-    }
+    // overrides Viewer.addTiledImage
+    addTiledImage: function(options) {
+        var _this = this;
 
+        var original = options.originalTiledImage;
+        delete options.original;
+
+        var optionsClone = $.extend({}, options, {
+            success: function(event) {
+                var myItem = event.item;
+                myItem._originalForNavigator = original;
+                _this._matchBounds(myItem, original, true);
+
+                function matchBounds() {
+                    _this._matchBounds(myItem, original);
+                }
+
+                function matchOpacity() {
+                    _this._matchOpacity(myItem, original);
+                }
+
+                function matchCompositeOperation() {
+                    _this._matchCompositeOperation(myItem, original);
+                }
+
+                original.addHandler('bounds-change', matchBounds);
+                original.addHandler('clip-change', matchBounds);
+                original.addHandler('opacity-change', matchOpacity);
+                original.addHandler('composite-operation-change', matchCompositeOperation);
+            }
+        });
+
+        return $.Viewer.prototype.addTiledImage.apply(this, [optionsClone]);
+    },
+
+    // private
+    _getMatchingItem: function(theirItem) {
+        var count = this.world.getItemCount();
+        var item;
+        for (var i = 0; i < count; i++) {
+            item = this.world.getItemAt(i);
+            if (item._originalForNavigator === theirItem) {
+                return item;
+            }
+        }
+
+        return null;
+    },
+
+    // private
+    _matchBounds: function(myItem, theirItem, immediately) {
+        var bounds = theirItem.getBoundsNoRotate();
+        myItem.setPosition(bounds.getTopLeft(), immediately);
+        myItem.setWidth(bounds.width, immediately);
+        myItem.setRotation(theirItem.getRotation(), immediately);
+        myItem.setClip(theirItem.getClip());
+    },
+
+    // private
+    _matchOpacity: function(myItem, theirItem) {
+        myItem.setOpacity(theirItem.opacity);
+    },
+
+    // private
+    _matchCompositeOperation: function(myItem, theirItem) {
+        myItem.setCompositeOperation(theirItem.compositeOperation);
+    }
 });
 
 /**
@@ -236,55 +404,35 @@ $.extend( $.Navigator.prototype, $.EventHandler.prototype, $.Viewer.prototype, {
  * @inner
  * @function
  */
-function onCanvasClick( tracker, position, quick, shift ) {
-    var newBounds,
-        viewerPosition,
-        dimensions;
-    if (! this.drag) {
-        if ( this.viewer.viewport ) {
-            viewerPosition = this.viewport.deltaPointsFromPixels(position);
-            dimensions = this.viewer.viewport.getBounds().getSize();
-            newBounds = new $.Rect(
-                viewerPosition.x - dimensions.x/2,
-                viewerPosition.y - dimensions.y/2,
-                dimensions.x,
-                dimensions.y
-            );
-            if (this.viewer.source.aspectRatio > this.viewer.viewport.getAspectRatio()) {
-                newBounds.y = newBounds.y -  ((this.viewerSizeInPoints.y - (1/this.viewer.source.aspectRatio)) /2 );
-            }
-            else  {
-                newBounds.x = newBounds.x -  ((this.viewerSizeInPoints.x -1) /2 );
-            }
-            this.viewer.viewport.fitBounds(newBounds);
+function onCanvasClick( event ) {
+    if ( event.quick && this.viewer.viewport ) {
+        this.viewer.viewport.panTo(this.viewport.pointFromPixel(event.position));
+        this.viewer.viewport.applyConstraints();
+    }
+}
+
+/**
+ * @private
+ * @inner
+ * @function
+ */
+function onCanvasDrag( event ) {
+    if ( this.viewer.viewport ) {
+        if( !this.panHorizontal ){
+            event.delta.x = 0;
+        }
+        if( !this.panVertical ){
+            event.delta.y = 0;
+        }
+        this.viewer.viewport.panBy(
+            this.viewport.deltaPointsFromPixels(
+                event.delta
+            )
+        );
+        if( this.viewer.constrainDuringPan ){
             this.viewer.viewport.applyConstraints();
         }
     }
-    else {
-        this.drag = false;
-    }
-}
-
-/**
- * @private
- * @inner
- * @function
- */
-function onCanvasDrag( tracker, position, delta, shift ) {
-    if ( this.viewer.viewport ) {
-        this.drag = true;
-        if( !this.panHorizontal ){
-            delta.x = 0;
-        }
-        if( !this.panVertical ){
-            delta.y = 0;
-        }
-        this.viewer.viewport.panBy( 
-            this.viewport.deltaPointsFromPixels( 
-                delta
-            ) 
-        );
-    }
 }
 
 
@@ -293,8 +441,8 @@ function onCanvasDrag( tracker, position, delta, shift ) {
  * @inner
  * @function
  */
-function onCanvasRelease( tracker, position, insideElementPress, insideElementRelease ) {
-    if ( insideElementPress && this.viewer.viewport ) {
+function onCanvasRelease( event ) {
+    if ( event.insideElementPressed && this.viewer.viewport ) {
         this.viewer.viewport.applyConstraints();
     }
 }
@@ -305,19 +453,46 @@ function onCanvasRelease( tracker, position, insideElementPress, insideElementRe
  * @inner
  * @function
  */
-function onCanvasScroll( tracker, position, scroll, shift ) {
-    var factor;
-    if ( this.viewer.viewport ) {
-        factor = Math.pow( this.zoomPerScroll, scroll );
-        this.viewer.viewport.zoomBy( 
-            factor, 
-            this.viewport.getCenter()
-        );
-        this.viewer.viewport.applyConstraints();
-    }
-    //cancels event
+function onCanvasScroll( event ) {
+    /**
+     * Raised when a scroll event occurs on the {@link OpenSeadragon.Viewer#navigator} element (mouse wheel, touch pinch, etc.).
+     *
+     * @event navigator-scroll
+     * @memberof OpenSeadragon.Viewer
+     * @type {object}
+     * @property {OpenSeadragon.Viewer} eventSource - A reference to the Viewer which raised this event.
+     * @property {OpenSeadragon.MouseTracker} tracker - A reference to the MouseTracker which originated this event.
+     * @property {OpenSeadragon.Point} position - The position of the event relative to the tracked element.
+     * @property {Number} scroll - The scroll delta for the event.
+     * @property {Boolean} shift - True if the shift key was pressed during this event.
+     * @property {Object} originalEvent - The original DOM event.
+     * @property {?Object} userData - Arbitrary subscriber-defined object.
+     */
+    this.viewer.raiseEvent( 'navigator-scroll', {
+        tracker: event.eventSource,
+        position: event.position,
+        scroll: event.scroll,
+        shift: event.shift,
+        originalEvent: event.originalEvent
+    });
+
+    //dont scroll the page up and down if the user is scrolling
+    //in the navigator
     return false;
 }
 
+/**
+    * @function
+    * @private
+    * @param {Object} element
+    * @param {Number} degrees
+    */
+function _setTransformRotate (element, degrees) {
+    element.style.webkitTransform = "rotate(" + degrees + "deg)";
+    element.style.mozTransform = "rotate(" + degrees + "deg)";
+    element.style.msTransform = "rotate(" + degrees + "deg)";
+    element.style.oTransform = "rotate(" + degrees + "deg)";
+    element.style.transform = "rotate(" + degrees + "deg)";
+}
 
 }( OpenSeadragon ));
